@@ -1,0 +1,38 @@
+# Mẫu systemd unit. Sửa User/Group và đường dẫn nếu bạn đặt code ở nơi khác,
+# rồi copy vào /etc/systemd/system/kokka-stock-api.service
+[Unit]
+Description=Kokka Stock API (FastAPI + vnstock)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=kokka
+Group=kokka
+WorkingDirectory=/opt/kokka-stock-api
+
+# vnstock cất khoá đã mã hoá và định danh thiết bị ở ~/.vnstock.
+# Không có HOME, systemd chạy với HOME=/ và vnstock không ghi được.
+Environment=HOME=/home/kokka
+Environment=PYTHONUNBUFFERED=1
+
+# Chứa STOCK_API_KEY (và VNSTOCK_API_KEY nếu bạn dùng cách biến môi trường).
+# systemd đọc dạng KEY=value, không có 'export', không cần dấu nháy.
+EnvironmentFile=/opt/kokka-stock-api/.env
+
+# --workers 1 là cố ý: TTLCache nằm trong tiến trình, mỗi worker có cache riêng
+# nên N worker = N lần gọi upstream = tốn N lần hạn mức vnstock.
+ExecStart=/opt/kokka-stock-api/.venv/bin/uvicorn main:app \
+          --host 127.0.0.1 --port 8000 --workers 1
+
+Restart=always
+RestartSec=3
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectControlGroups=true
+ProtectKernelTunables=true
+
+[Install]
+WantedBy=multi-user.target

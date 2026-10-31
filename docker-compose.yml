@@ -1,0 +1,23 @@
+services:
+  api:
+    build: .
+    image: kokka-stock-api:latest
+    restart: unless-stopped
+    # Chỉ mở trên loopback, để nginx/ALB đứng trước làm TLS.
+    # Muốn phơi trực tiếp ra Internet thì đổi thành "8000:8000".
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Giữ khoá đã mã hoá + định danh thiết bị qua các lần restart.
+      # Không có volume này, mỗi container mới là một THIẾT BỊ MỚI với vnstock.
+      - vnstock-auth:/home/app/.vnstock
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  vnstock-auth:

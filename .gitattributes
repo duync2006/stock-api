@@ -1,0 +1,3 @@
+# Giữ LF cho mọi tệp text: Dockerfile, systemd unit và shell script lưu CRLF
+# sẽ lỗi khi chạy trên Linux.
+* text=auto eol=lf
