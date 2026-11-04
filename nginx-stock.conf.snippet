@@ -1,0 +1,57 @@
+# Chèn khối này vào trong server block nexxa.asia (listen 443), đặt TRƯỚC
+# "location /" cho dễ đọc. Thứ tự không bắt buộc vì ^~ đã ưu tiên sẵn.
+
+# ^~ là cố ý: nó thắng mọi location regex (ví dụ "location ~* \.html$"),
+# nên request tới /stock/... không bị khối regex kia bắt mất.
+# Chặn endpoint nội bộ (xem/xoá cache) khỏi Internet. Prefix dài hơn thắng
+# /stock/, và ^~ giúp nó cũng thắng cả location regex như \.html$.
+# Dev gọi thẳng trên server: curl localhost:8000/api/v1/internal/cache
+# hoặc qua SSH tunnel; không đi qua nginx.
+location ^~ /stock/api/v1/internal/ {
+    return 404;
+}
+
+location ^~ /stock/ {
+    # Giới hạn tần suất, bảo vệ hạn mức vnstock.
+    #
+    # BẮT BUỘC khai báo zone trong http {} của /etc/nginx/nginx.conf trước
+    # (cùng chỗ với rpc_limit; tìm bằng: grep -rn limit_req_zone /etc/nginx/):
+    #
+    #   limit_req_zone $binary_remote_addr zone=stock_limit:10m rate=10r/s;
+    #
+    # Thiếu dòng đó:    nginx -t báo  [emerg] zero size shared memory zone "stock_limit"
+    # Đặt trong server{}: nginx -t báo  "limit_req_zone" directive is not allowed here
+    # Không cần rate limit thì xoá hẳn dòng limit_req dưới đây.
+    limit_req zone=stock_limit burst=20 nodelay;
+
+    # Cắt /stock trước khi gửi sang container.
+    # /stock/api/v1/vietfin/symbols -> 127.0.0.1:8000/api/v1/vietfin/symbols
+    rewrite ^/stock/?(.*) /$1 break;
+
+    proxy_pass http://127.0.0.1:8000;
+
+    # Lần gọi đầu sau khi cache 60s hết hạn phải chờ vnstock lấy dữ liệu thật.
+    proxy_connect_timeout 10s;
+    proxy_send_timeout    30s;
+    proxy_read_timeout    30s;
+
+    # Keep-alive tới upstream. Connection "" (rỗng), KHÔNG dùng "upgrade"
+    # vì API này không có WebSocket.
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # Header X-API-Key của app Flutter được chuyển tiếp tự động, không cần
+    # khai báo gì thêm.
+
+    # Dữ liệu giá thay đổi liên tục; cache đã nằm ở FastAPI (TTL 60s).
+    add_header Cache-Control "no-store" always;
+}
+
+location = /stock {
+    return 301 /stock/;
+}
